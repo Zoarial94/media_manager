@@ -1,4 +1,6 @@
-use iced::{Alignment, Application, Command, Element, keyboard, Settings, Subscription, Theme, widget};
+mod persistence;
+
+use iced::{Alignment, Application, Command, Element, keyboard, Pixels, Settings, Subscription, Theme, widget};
 use iced::widget::{button, column, container, row, text_input, text};
 use once_cell::sync::Lazy;
 
@@ -16,13 +18,14 @@ mod media_info {
     use std::ops::Not;
     use std::path::{Path, PathBuf};
 
-    use iced::{Alignment, Element};
-    use iced::widget::{button, column, Column, container, row, text};
-
+    use iced::{Alignment, Element, Theme};
+    use iced::Length::Fill;
+    use iced::widget::{button, column, Column, container, Container, row, text};
+    use serde::{Deserialize, Serialize};
     use crate::{MediaPathMessage, Message};
     use crate::media_info::MediaPathError::*;
 
-    #[derive(Debug, Clone)]
+    #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct MediaLocationInfo {
         name: String,
         path: PathBuf,
@@ -61,18 +64,20 @@ mod media_info {
         }
 
         fn view(&self) -> Element<MediaPathMessage> {
-            row![
-            column![
-                text(self.name.to_string()).size(25),
-                text(self.path.to_str().unwrap_or("Error")).size(15),
-            ].width(400).spacing(5),
-            button("Remove").on_press(MediaPathMessage::Remove)
-        ].align_items(Alignment::Center).into()
+            container(
+                row![
+                column![
+                    text(self.name.to_string()).size(25),
+                    text(self.path.to_str().unwrap_or("Error")).size(15),
+                ].spacing(5).width(Fill),
+                button("Remove").on_press(MediaPathMessage::Remove)
+                ].padding(10).align_items(Alignment::Center)
+            ).into()
         }
 
     }
 
-    #[derive(Debug, Clone, Default)]
+    #[derive(Debug, Clone, Default, Serialize, Deserialize)]
     pub struct MediaPathList {
         list: Vec<MediaLocationInfo>,
     }
@@ -83,14 +88,19 @@ mod media_info {
         }
 
         pub fn view(&self) -> Element<Message> {
-            return container(if self.list.is_empty().not() {
-                Column::with_children(self.list.iter().enumerate().map(|(i, path)| {
+            return if self.list.is_empty().not() {
+                container(Column::with_children(self.list.iter().enumerate().map(|(i, path)| {
                     path.view().map(move |message| { Message::MediaPathMessage(i, message)})
-                })).spacing(10)
+                })).spacing(10)).style(|theme: &Theme| {
+                    let palette = theme.extended_palette();
+
+                    container::Appearance::default()
+                        .with_border(palette.background.strong.color, 1)
+                }).into()
             } else {
-                column!(text("No paths...").size(25))
-                    .height(200)
-            }).padding(20).into()
+                container(column!(text("No paths...").size(25))
+                    .height(200))
+            }.padding(20).into()
 
         }
 
@@ -222,7 +232,7 @@ impl Application for MediaManager {
         match self {
             MediaManager::Loaded(state) => {
                 // Get a view of the currently saved paths
-                let paths = state.media_path_list.view();
+                let paths_view = container(state.media_path_list.view());
                 let path_info_valid = state.media_location.starts_with('/');
                 let button_action = if path_info_valid {
                     Some(Message::AddMediaPath)
@@ -238,9 +248,7 @@ impl Application for MediaManager {
                     MediaPathError::NotADirectory => {"Not a directory"}
                 };
 
-                let rows = row![
-                    // We use a column: a simple vertical layout
-                    column![
+                let add_media_path_view = column![
 
                         text("Media Location Info"),
                         text_input("SD Card", &state.media_location_name)
@@ -270,11 +278,15 @@ impl Application for MediaManager {
                         //button("Remove").on_press(Message::Remove),
                     ] // column![]
                         .spacing(10)
-                ] //row![]
-                    .padding(20)
-                    .align_items(Alignment::Start);
+                        .padding(20)
+                        .align_items(Alignment::Start);
 
-                container(row![rows,paths]).into()
+                //let sidebar_size = if add_media_path_view.size().width
+
+                row!(
+                    column![add_media_path_view,paths_view].width(iced::Length::FillPortion(2).enclose(Pixels(80.0).into())),
+                    container(text("Test!")).width(iced::Length::FillPortion(3))
+                ).into()
             }
         }
 
