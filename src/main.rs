@@ -230,7 +230,17 @@ impl Application for MediaManager {
                         }
                         Command::none()
                     }
-
+                    Message::Saved(result) => {
+                        match result {
+                            Err(e) => {
+                                eprintln!("Saving Error: {:?}", e);
+                            }
+                            Ok(_) => {
+                                println!("Saved state!")
+                            }
+                        }
+                        Command::none()
+                    }
                     _ => {Command::none()}
                 }
             }
@@ -312,8 +322,8 @@ impl Application for MediaManager {
                 //let sidebar_size = if add_media_path_view.size().width
 
                 row!(
-                    column![add_media_path_view,paths_view].width(iced::Length::FillPortion(2).enclose(Pixels(80.0).into())),
-                    container(text("Test!")).width(iced::Length::FillPortion(3))
+                    column![add_media_path_view,paths_view].width(iced::Length::FillPortion(1).enclose(Pixels(80.0).into())),
+                    container(text("Test!")).width(iced::Length::FillPortion(2))
                 ).into()
             }
             _ => {container(text("Loading...")).into()}
