@@ -1,11 +1,10 @@
 mod persistence;
 
 use iced::{Alignment, Application, Command, Element, keyboard, Pixels, Settings, Subscription, Theme, widget};
-use iced::widget::{button, column, container, row, text_input, text, Text};
+use iced::widget::{button, column, container, row, text_input, text};
 use once_cell::sync::Lazy;
-use serde::Serialize;
 use media_info::*;
-use crate::persistence::media_info::{LoadError, SaveError};
+use crate::persistence::{LoadError, SaveError};
 
 static MEDIA_LOCATION_INPUT_ID: Lazy<text_input::Id> = Lazy::new(|| text_input::Id::new("Media Location"));
 static MEDIA_LOCATION_NAME_INPUT_ID: Lazy<text_input::Id> = Lazy::new(|| text_input::Id::new("Media Location Name"));
@@ -21,13 +20,17 @@ mod media_info {
 
     use iced::{Alignment, Element, Theme};
     use iced::Length::Fill;
-    use iced::widget::{button, column, Column, container, Container, row, text};
+    use iced::widget::{button, column, Column, container, row, text};
     use serde::{Deserialize, Serialize};
     use crate::{MediaPathMessage, Message};
     use crate::media_info::MediaPathError::*;
 
     #[derive(Debug, Default, Clone, Serialize, Deserialize)]
     pub(super) struct State {
+        #[serde(skip)]
+        pub(crate) saving: bool,
+        #[serde(skip)]
+        pub(crate) save_state_changed: bool,
         pub(crate) media_path_list: MediaPathList,
         pub(crate) media_location: String,
         pub(crate) media_location_name: String,
@@ -143,8 +146,9 @@ pub enum MediaPathMessage {
 
 #[derive(Debug, Clone)]
 enum Message {
-    Loaded(Result<State, LoadError>),
-    Saved(Result<(), SaveError>),
+    LoadState,
+    StateLoaded(Result<State, LoadError>),
+    StateSaved(Result<(), SaveError>),
     // Media Path
     AddMediaPath,
     MediaPathMessage(usize, MediaPathMessage), //TODO: made MediaPathMessage a reference (Lifetime needed)
@@ -172,9 +176,8 @@ impl Application for MediaManager {
     type Flags = ();
 
     fn new(_: Self::Flags) -> (MediaManager, Command<Message>) {
-        (MediaManager::Loading(), Command::perform(State::load(), Message::Loaded))
+        (MediaManager::Loading(), Command::perform(async {  }, |_| Message::LoadState))
     }
-
 
     fn title(&self) -> String {
         String::from("Media Manager")
@@ -183,14 +186,14 @@ impl Application for MediaManager {
     fn update(&mut self, message: Self::Message) -> Command<Message> {
         match self {
             MediaManager::Loaded(state) => {
-                match message {
+                let command = match message {
                     Message::MediaLocationInputChanged(new_text) => {
                         state.media_location = new_text;
-                        Command::none()
+                        None
                     },
                     Message::MediaLocationNameInputChanged(new_text) => {
                         state.media_location_name = new_text;
-                        Command::none()
+                        Some(Command::none())
                     },
                     Message::AddMediaPath => {
                         match MediaLocationInfo::new(state.media_location_name.clone(), state.media_location.clone()) {
@@ -199,27 +202,24 @@ impl Application for MediaManager {
                                 state.media_location.clear();
                                 state.media_location_name.clear();
                                 state.media_path_error = MediaPathError::NoError;
-                                Command::batch(vec![
-                                    text_input::focus(MEDIA_LOCATION_NAME_INPUT_ID.clone()),
-                                    //TODO: Potentially optimize. This might be an expensive clone.
-                                    Command::perform(state.clone().save(), Message::Saved)
-                                ])
+                                state.save_state_changed = true;
+                                Some(text_input::focus(MEDIA_LOCATION_NAME_INPUT_ID.clone()))
                             }
                             Err(err) => {
                                 eprintln!("Media error: {:?}", err);
                                 state.media_path_error = err;
-                                return Command::none()
+                                None
                             }
                         }
                     },
                     Message::FocusTextID(id) => {
-                        text_input::focus(id)
+                        Some(text_input::focus(id))
                     }
                     Message::TabPressed { shift } => {
                         if shift {
-                            widget::focus_previous()
+                            Some(widget::focus_previous())
                         } else {
-                            widget::focus_next()
+                            Some(widget::focus_next())
                         }
                     }
                     Message::MediaPathMessage(index, message) => {
@@ -228,9 +228,11 @@ impl Application for MediaManager {
                                 state.media_path_list.remove(index)
                             }
                         }
-                        Command::none()
+                        state.save_state_changed = true;
+                        None
                     }
-                    Message::Saved(result) => {
+                    Message::StateSaved(result) => {
+                        state.saving = false;
                         match result {
                             Err(e) => {
                                 eprintln!("Saving Error: {:?}", e);
@@ -239,14 +241,37 @@ impl Application for MediaManager {
                                 println!("Saved state!")
                             }
                         }
-                        Command::none()
+                        None
+                    }
+                    _ => {None}
+                };
+
+                match (command, state.saving, state.save_state_changed) {
+                    (None, false, true) => {
+                        state.saving = true;
+                        state.save_state_changed = false;
+                        Command::perform(state.clone().save(), Message::StateSaved)
+                    }
+                    (Some(command), false, true) => {
+                        state.saving = true;
+                        state.save_state_changed = false;
+                        Command::batch(vec![
+                            command,
+                            Command::perform(state.clone().save(), Message::StateSaved)
+                        ])
+                    }
+                    (Some(command), _, false) => {
+                        command
                     }
                     _ => {Command::none()}
                 }
             }
             MediaManager::Loading() => {
                 return match message {
-                    Message::Loaded(restored_state) => {
+                    Message::LoadState => {
+                        Command::perform(State::load(), Message::StateLoaded)
+                    }
+                    Message::StateLoaded(restored_state) => {
                         match restored_state {
                             Ok(state) => {
                                 println!("State successfully loaded.");
