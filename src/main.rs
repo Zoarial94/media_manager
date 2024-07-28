@@ -1,10 +1,11 @@
 mod persistence;
 
 use iced::{Alignment, Application, Command, Element, keyboard, Pixels, Settings, Subscription, Theme, widget};
-use iced::widget::{button, column, container, row, text_input, text};
+use iced::widget::{button, column, container, row, text_input, text, Text};
 use once_cell::sync::Lazy;
-
+use serde::Serialize;
 use media_info::*;
+use crate::persistence::media_info::{LoadError, SaveError};
 
 static MEDIA_LOCATION_INPUT_ID: Lazy<text_input::Id> = Lazy::new(|| text_input::Id::new("Media Location"));
 static MEDIA_LOCATION_NAME_INPUT_ID: Lazy<text_input::Id> = Lazy::new(|| text_input::Id::new("Media Location Name"));
@@ -24,6 +25,15 @@ mod media_info {
     use serde::{Deserialize, Serialize};
     use crate::{MediaPathMessage, Message};
     use crate::media_info::MediaPathError::*;
+
+    #[derive(Debug, Default, Clone, Serialize, Deserialize)]
+    pub(super) struct State {
+        pub(crate) media_path_list: MediaPathList,
+        pub(crate) media_location: String,
+        pub(crate) media_location_name: String,
+        #[serde(skip)]
+        pub(crate) media_path_error: MediaPathError
+    }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct MediaLocationInfo {
@@ -131,9 +141,10 @@ pub enum MediaPathMessage {
     Remove,
 }
 
-
 #[derive(Debug, Clone)]
 enum Message {
+    Loaded(Result<State, LoadError>),
+    Saved(Result<(), SaveError>),
     // Media Path
     AddMediaPath,
     MediaPathMessage(usize, MediaPathMessage), //TODO: made MediaPathMessage a reference (Lifetime needed)
@@ -143,21 +154,14 @@ enum Message {
     MediaLocationNameInputChanged(String),
 
     FocusTextID(text_input::Id),
-    TabPressed { shift: bool }
+    TabPressed { shift: bool },
 
 }
 
-
-#[derive(Debug, Default)]
-struct State {
-    media_path_list: MediaPathList,
-    media_location: String,
-    media_location_name: String,
-    media_path_error: MediaPathError
-}
 
 #[derive(Debug)]
 enum MediaManager {
+    Loading(),
     Loaded(State)
 }
 
@@ -168,7 +172,7 @@ impl Application for MediaManager {
     type Flags = ();
 
     fn new(_: Self::Flags) -> (MediaManager, Command<Message>) {
-        (MediaManager::Loaded(State::default()), Command::none())
+        (MediaManager::Loading(), Command::perform(State::load(), Message::Loaded))
     }
 
 
@@ -195,7 +199,11 @@ impl Application for MediaManager {
                                 state.media_location.clear();
                                 state.media_location_name.clear();
                                 state.media_path_error = MediaPathError::NoError;
-                                text_input::focus(MEDIA_LOCATION_NAME_INPUT_ID.clone())
+                                Command::batch(vec![
+                                    text_input::focus(MEDIA_LOCATION_NAME_INPUT_ID.clone()),
+                                    //TODO: Potentially optimize. This might be an expensive clone.
+                                    Command::perform(state.clone().save(), Message::Saved)
+                                ])
                             }
                             Err(err) => {
                                 eprintln!("Media error: {:?}", err);
@@ -222,6 +230,26 @@ impl Application for MediaManager {
                         }
                         Command::none()
                     }
+
+                    _ => {Command::none()}
+                }
+            }
+            MediaManager::Loading() => {
+                return match message {
+                    Message::Loaded(restored_state) => {
+                        match restored_state {
+                            Ok(state) => {
+                                println!("State successfully loaded.");
+                                *self = MediaManager::Loaded(state);
+                            }
+                            Err(e) => {
+                                eprintln!("Failed to restore state: {:?}", e);
+                                *self = MediaManager::Loaded(State::default());
+                            }
+                        }
+                        Command::none()
+                    }
+                    _ => {Command::none()}
                 }
             }
         }
@@ -288,6 +316,7 @@ impl Application for MediaManager {
                     container(text("Test!")).width(iced::Length::FillPortion(3))
                 ).into()
             }
+            _ => {container(text("Loading...")).into()}
         }
 
     }
