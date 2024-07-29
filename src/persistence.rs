@@ -1,5 +1,5 @@
-use turbosql::serde_json;
 use crate::State;
+use turbosql::serde_json;
 
 #[derive(Debug, Clone)]
 pub enum LoadError {
@@ -50,8 +50,7 @@ impl State {
 
         println!("Saving...");
 
-        let json = serde_json::to_string_pretty(&self)
-            .map_err(|_| SaveError::Format)?;
+        let json = serde_json::to_string_pretty(&self).map_err(|_| SaveError::Format)?;
 
         let path = Self::path();
 
