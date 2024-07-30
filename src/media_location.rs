@@ -1,13 +1,13 @@
 use std::ops::Not;
 use std::path::{Path, PathBuf};
 
-use crate::media_location::MediaPathError::*;
-use crate::{media_location, Message};
-use iced::widget::{button, column, container, row, scrollable, text, Column, Row};
-use iced::Length::Fill;
 use iced::{Alignment, Element, Theme};
-use iced_aw::DropDown;
+use iced::Length::Fill;
+use iced::widget::{button, column, Column, container, row, scrollable, text};
 use serde::{Deserialize, Serialize};
+
+use crate::media_location::MediaPathError::*;
+use crate::Message;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MediaLocationInfo {
@@ -80,27 +80,38 @@ impl MediaLocationInfo {
     }
 
     fn view_media(&self) -> Element<MediaPathMessage> {
-        container(
-            DropDown::new(
-                row![
-                    text(self.name.to_string()).size(25).width(Fill),
-                    button("Toggle").on_press(MediaPathMessage::ToggleAccordion)
-                ]
-                .align_items(Alignment::Center),
-                column![text("Option1"), text("Option2")],
-                self.dropdown_opened,
-            )
-            .width(Fill),
+        self.view_as_accordion(
+            text(self.name.to_string()).size(25).width(Fill).into(),
+            column![text("Option1"), text("Option2")].into(),
         )
-        .padding(4)
-        .style(|theme: &Theme| {
-            let palette = theme.extended_palette();
+    }
 
-            container::Appearance::default().with_background(palette.background.weak.color)
-            //TODO: Implement a stylesheet to round the corner of the container
-        })
-        .width(Fill)
-        .into()
+    fn view_as_accordion<'a>(
+        &self,
+        header: Element<'a, MediaPathMessage>,
+        body: Element<'a, MediaPathMessage>,
+    ) -> Element<'a, MediaPathMessage> {
+        let header = row![
+            header,
+            button("Toggle").on_press(MediaPathMessage::ToggleAccordion)
+        ]
+        .align_items(Alignment::Center);
+        let wrapper = if self.dropdown_opened {
+            container(column![header, body].spacing(4))
+        } else {
+            container(header)
+        };
+
+        wrapper
+            .padding(4)
+            .width(Fill)
+            .style(|theme: &Theme| {
+                let palette = theme.extended_palette();
+
+                container::Appearance::default().with_background(palette.background.weak.color)
+                //TODO: Implement a stylesheet to round the corner of the container
+            })
+            .into()
     }
 }
 
@@ -161,13 +172,18 @@ impl MediaPathList {
     }
 
     pub fn expand_accordion(&mut self, index: usize) {
-        self.list.get_mut(index).expect("Invalid Index!").dropdown_opened = true;
+        self.list
+            .get_mut(index)
+            .expect("Invalid Index!")
+            .dropdown_opened = true;
     }
 
     pub fn collapse_accordion(&mut self, index: usize) {
-        self.list.get_mut(index).expect("Invalid Index!").dropdown_opened = false;
+        self.list
+            .get_mut(index)
+            .expect("Invalid Index!")
+            .dropdown_opened = false;
     }
-
 }
 
 #[derive(Debug, Clone, Copy, Default)]

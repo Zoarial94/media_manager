@@ -118,7 +118,7 @@ impl Application for MediaManager {
                             MediaPathMessage::Remove => {
                                 state.media_path_list.remove(index);
                                 state.save_state_changed = true;
-                            },
+                            }
                             MediaPathMessage::ExpandAccordion => {
                                 state.media_path_list.expand_accordion(index)
                             }

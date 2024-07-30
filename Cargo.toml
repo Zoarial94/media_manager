@@ -5,12 +5,6 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-[workspace]
-
-members = [
-    "widget"
-]
-
 [dependencies]
 iced = "0.12.1"
 turbosql = "0.11.0"
