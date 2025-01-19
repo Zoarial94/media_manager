@@ -4,10 +4,7 @@ mod persistence;
 use crate::media_location::*;
 use crate::persistence::*;
 use iced::widget::{button, column, container, row, text, text_input};
-use iced::{
-    keyboard, widget, Alignment, Application, Command, Element, Pixels, Settings, Subscription,
-    Theme,
-};
+use iced::{keyboard, widget, Alignment, Element, Pixels, Subscription, Task};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 
@@ -18,7 +15,10 @@ static MEDIA_LOCATION_NAME_INPUT_ID: Lazy<text_input::Id> =
 
 fn main() {
     println!("Hello, world!");
-    MediaManager::run(Settings::default()).expect("TODO: panic message");
+    iced::application("Media Manager", MediaManager::update, MediaManager::view)
+        .subscription(MediaManager::subscription)
+        .run_with(|| MediaManager::new(()))
+        .expect("TODO: panic message");
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -56,34 +56,26 @@ enum MediaManager {
     Loaded(State),
 }
 
-impl Application for MediaManager {
-    type Executor = iced::executor::Default;
-    type Message = Message;
-    type Theme = Theme;
-    type Flags = ();
+impl MediaManager {
 
-    fn new(_: Self::Flags) -> (MediaManager, Command<Message>) {
+    fn new(_flags: ()) -> (Self, Task<Message>) {
         (
             MediaManager::Loading(),
-            Command::perform(async {}, |_| Message::LoadState),
+            Task::perform(async {}, |_| Message::LoadState),
         )
     }
 
-    fn title(&self) -> String {
-        String::from("Media Manager")
-    }
-
-    fn update(&mut self, message: Self::Message) -> Command<Message> {
+    fn update(&mut self, message: Message) -> Task<Message> {
         match self {
             MediaManager::Loaded(state) => {
-                let command = match message {
+                let task = match message {
                     Message::MediaLocationInputChanged(new_text) => {
                         state.media_location = new_text;
                         None
                     }
                     Message::MediaLocationNameInputChanged(new_text) => {
                         state.media_location_name = new_text;
-                        Some(Command::none())
+                        Some(Task::none())
                     }
                     Message::AddMediaPath => {
                         match MediaLocationInfo::new(
@@ -146,27 +138,27 @@ impl Application for MediaManager {
                     _ => None,
                 };
 
-                match (command, state.saving, state.save_state_changed) {
+                match (task, state.saving, state.save_state_changed) {
                     (None, false, true) => {
                         state.saving = true;
                         state.save_state_changed = false;
-                        Command::perform(state.clone().save(), Message::StateSaved)
+                        Task::perform(state.clone().save(), Message::StateSaved)
                     }
-                    (Some(command), false, true) => {
+                    (Some(task), false, true) => {
                         state.saving = true;
                         state.save_state_changed = false;
-                        Command::batch(vec![
-                            command,
-                            Command::perform(state.clone().save(), Message::StateSaved),
+                        Task::batch(vec![
+                            task,
+                            Task::perform(state.clone().save(), Message::StateSaved),
                         ])
                     }
-                    (Some(command), _, false) => command,
-                    _ => Command::none(),
+                    (Some(task), _, false) => task,
+                    _ => Task::none(),
                 }
             }
             MediaManager::Loading() => {
                 return match message {
-                    Message::LoadState => Command::perform(State::load(), Message::StateLoaded),
+                    Message::LoadState => Task::perform(State::load(), Message::StateLoaded),
                     Message::StateLoaded(restored_state) => {
                         match restored_state {
                             Ok(state) => {
@@ -178,15 +170,15 @@ impl Application for MediaManager {
                                 *self = MediaManager::Loaded(State::default());
                             }
                         }
-                        Command::none()
+                        Task::none()
                     }
-                    _ => Command::none(),
+                    _ => Task::none(),
                 }
             }
         }
     }
 
-    fn view(&self) -> Element<Self::Message> {
+    fn view(&self) -> Element<Message> {
         match self {
             MediaManager::Loaded(state) => {
                 // Get a view of the currently saved paths
@@ -232,7 +224,7 @@ impl Application for MediaManager {
                 ] // column![]
                 .spacing(10)
                 .padding(20)
-                .align_items(Alignment::Start);
+                .align_x(Alignment::Start);
 
                 //let sidebar_size = if add_media_path_view.size().width
 

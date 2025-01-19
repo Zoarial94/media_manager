@@ -1,7 +1,7 @@
 use std::ops::Not;
 use std::path::{Path, PathBuf};
 
-use iced::{Alignment, Element, Theme};
+use iced::{Alignment, Border, Element, Theme};
 use iced::Length::Fill;
 use iced::widget::{button, column, Column, container, row, scrollable, text};
 use serde::{Deserialize, Serialize};
@@ -70,11 +70,11 @@ impl MediaLocationInfo {
                     button("Edit"),
                     button("Remove").on_press(MediaPathMessage::Remove)
                 ]
-                .align_items(Alignment::Center)
+                .align_y(Alignment::Center)
                 .spacing(4)
             ]
             .padding(4)
-            .align_items(Alignment::Center),
+            .align_y(Alignment::Center),
         )
         .into()
     }
@@ -95,7 +95,7 @@ impl MediaLocationInfo {
             header,
             button("Toggle").on_press(MediaPathMessage::ToggleAccordion)
         ]
-        .align_items(Alignment::Center);
+        .align_y(Alignment::Center);
         let wrapper = if self.dropdown_opened {
             container(column![header, body].spacing(4))
         } else {
@@ -108,7 +108,7 @@ impl MediaLocationInfo {
             .style(|theme: &Theme| {
                 let palette = theme.extended_palette();
 
-                container::Appearance::default().with_background(palette.background.weak.color)
+                container::Style::default().background(palette.background.weak.color)
                 //TODO: Implement a stylesheet to round the corner of the container
             })
             .into()
@@ -137,7 +137,7 @@ impl MediaPathList {
             .style(|theme: &Theme| {
                 let palette = theme.extended_palette();
 
-                container::Appearance::default().with_border(palette.background.strong.color, 1)
+                container::Style::default().border(Border::default().color(palette.background.strong.color).width(1))
             })
             .into()
         } else {
