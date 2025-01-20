@@ -7,6 +7,7 @@ use iced::widget::{button, column, container, row, text, text_input};
 use iced::{keyboard, widget, Alignment, Element, Pixels, Subscription, Task};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
+use std::mem;
 
 static MEDIA_LOCATION_INPUT_ID: Lazy<text_input::Id> =
     Lazy::new(|| text_input::Id::new("Media Location"));
@@ -27,7 +28,7 @@ pub(crate) struct State {
     pub(crate) saving: bool,
     #[serde(skip)]
     pub(crate) save_state_changed: bool,
-    pub(crate) media_path_list: MediaPathList,
+    pub(crate) media_path_list: Box<MediaPathList>,
     pub(crate) media_location: String,
     pub(crate) media_location_name: String,
     #[serde(skip)]
@@ -42,6 +43,8 @@ enum Message {
     // Media Path
     AddMediaPath,
     MediaPathMessage(usize, MediaPathMessage), //TODO: made MediaPathMessage a reference (Lifetime needed)
+
+    MediaPathsScanned(Box<MediaPathList>),
 
     MediaLocationInputChanged(String),
     MediaLocationNameInputChanged(String),
@@ -75,7 +78,7 @@ impl MediaManager {
                     }
                     Message::MediaLocationNameInputChanged(new_text) => {
                         state.media_location_name = new_text;
-                        Some(Task::none())
+                        None
                     }
                     Message::AddMediaPath => {
                         match MediaLocationInfo::new(
@@ -110,17 +113,33 @@ impl MediaManager {
                             MediaPathMessage::Remove => {
                                 state.media_path_list.remove(index);
                                 state.save_state_changed = true;
+                                None
                             }
                             MediaPathMessage::ExpandAccordion => {
-                                state.media_path_list.expand_accordion(index)
+                                state.media_path_list.expand_accordion(index);
+                                None
                             }
                             MediaPathMessage::CollapseAccordion => {
-                                state.media_path_list.collapse_accordion(index)
+                                state.media_path_list.collapse_accordion(index);
+                                None
                             }
                             MediaPathMessage::ToggleAccordion => {
-                                state.media_path_list.toggle_accordion(index)
+                                state.media_path_list.toggle_accordion(index);
+                                None
+                            }
+                            MediaPathMessage::Scan => {
+                                //Some(Task::perform(state.media_path_list.clone().scan(index), |_| Message::MediaPathsScanned()))
+                                todo!();
+                                None
+                            }
+                            MediaPathMessage::ScanAll => {
+                                let list = mem::replace(&mut state.media_path_list, Box::new(Default::default()));
+                                Some(Task::perform(list.scan_all(), |list: MediaPathList| Message::MediaPathsScanned(Box::from(list))))
                             }
                         }
+                    }
+                    Message::MediaPathsScanned(list) => {
+                        state.media_path_list = list;
                         None
                     }
                     Message::StateSaved(result) => {
@@ -139,12 +158,12 @@ impl MediaManager {
                 };
 
                 match (task, state.saving, state.save_state_changed) {
-                    (None, false, true) => {
+                    (None, false, true) => { // Initiate saving
                         state.saving = true;
                         state.save_state_changed = false;
                         Task::perform(state.clone().save(), Message::StateSaved)
                     }
-                    (Some(task), false, true) => {
+                    (Some(task), false, true) => { // Initiate saving and do task
                         state.saving = true;
                         state.save_state_changed = false;
                         Task::batch(vec![
@@ -152,12 +171,12 @@ impl MediaManager {
                             Task::perform(state.clone().save(), Message::StateSaved),
                         ])
                     }
-                    (Some(task), _, false) => task,
-                    _ => Task::none(),
+                    (Some(task), _, false) => task, // Do task
+                    _ => Task::none(), // Do nothing
                 }
             }
             MediaManager::Loading() => {
-                return match message {
+                match message {
                     Message::LoadState => Task::perform(State::load(), Message::StateLoaded),
                     Message::StateLoaded(restored_state) => {
                         match restored_state {
@@ -229,7 +248,7 @@ impl MediaManager {
                 //let sidebar_size = if add_media_path_view.size().width
 
                 row!(
-                    column![add_media_path_view, paths_view]
+                    column![add_media_path_view, paths_view, button("Scan").on_press(Message::MediaPathMessage(0, MediaPathMessage::ScanAll)).width(120)]
                         .width(iced::Length::FillPortion(1).enclose(Pixels(80.0).into())),
                     container(media_view).width(iced::Length::FillPortion(2))
                 )

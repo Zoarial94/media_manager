@@ -1,10 +1,9 @@
+use iced::widget::{button, column, container, row, scrollable, text, Column};
+use iced::Length::Fill;
+use iced::{Alignment, Border, Element, Theme};
+use serde::{Deserialize, Serialize};
 use std::ops::Not;
 use std::path::{Path, PathBuf};
-
-use iced::{Alignment, Border, Element, Theme};
-use iced::Length::Fill;
-use iced::widget::{button, column, Column, container, row, scrollable, text};
-use serde::{Deserialize, Serialize};
 
 use crate::media_location::MediaPathError::*;
 use crate::Message;
@@ -15,6 +14,31 @@ pub struct MediaLocationInfo {
     path: PathBuf,
     #[serde(skip)]
     dropdown_opened: bool,
+    #[serde(skip)]
+    items: MediaLocationItems,
+}
+
+#[derive(Clone, Debug)]
+pub enum MediaLocationItems {
+    Unscanned,
+    Scanning,
+    Scanned(Scanned),
+    Error(String),
+}
+
+impl Default for MediaLocationItems {
+    fn default() -> Self { MediaLocationItems::Unscanned }
+}
+
+#[derive(Clone, Debug)]
+pub struct Scanned {
+    pub number: usize,
+}
+
+impl Scanned {
+    pub fn new(number: usize) -> Self {
+        Scanned { number }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -23,12 +47,14 @@ pub enum MediaPathMessage {
     ExpandAccordion,
     CollapseAccordion,
     ToggleAccordion,
+    Scan,
+    ScanAll,
 }
 
 impl MediaLocationInfo {
     // TODO: Somehow let this assume ownership of the parameters
     pub fn new(name: String, location: String) -> Result<MediaLocationInfo, MediaPathError> {
-        return match Path::new(&location).canonicalize() {
+        match Path::new(&location).canonicalize() {
             Ok(path) => {
                 match path.try_exists() {
                     // Returns true, false, and Err (Err means cannot be determined due to permissions)
@@ -39,6 +65,7 @@ impl MediaLocationInfo {
                                     name,
                                     path,
                                     dropdown_opened: false,
+                                    items: MediaLocationItems::Unscanned,
                                 })
                             } else {
                                 Err(NotADirectory)
@@ -54,7 +81,7 @@ impl MediaLocationInfo {
                 eprintln!("{}", err);
                 Err(InvalidPath)
             }
-        };
+        }
     }
 
     fn view_header(&self) -> Element<MediaPathMessage> {
@@ -80,9 +107,15 @@ impl MediaLocationInfo {
     }
 
     fn view_media(&self) -> Element<MediaPathMessage> {
+        let scanned_status = match &self.items {
+            MediaLocationItems::Unscanned => text("Unscanned"),
+            MediaLocationItems::Scanning => text("Scanning"),
+            MediaLocationItems::Scanned(scanned) => text!("Number of Children: {}", scanned.number),
+            MediaLocationItems::Error(err) => text!("Error: {}", err),
+        };
         self.view_as_accordion(
             text(self.name.to_string()).size(25).width(Fill).into(),
-            column![text("Option1"), text("Option2")].into(),
+            column![scanned_status,text("Option1"), text("Option2")].into(),
         )
     }
 
@@ -113,6 +146,16 @@ impl MediaLocationInfo {
             })
             .into()
     }
+
+    fn scan(&mut self) {
+        match self.path.read_dir() {
+            Ok(dir) => {
+                self.items = MediaLocationItems::Scanned(Scanned::new(dir.count()));
+            }
+            Err(err) => self.items = MediaLocationItems::Error(err.to_string())
+        }
+    }
+
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -121,12 +164,16 @@ pub struct MediaPathList {
 }
 
 impl MediaPathList {
+
+    fn get_mut(&mut self, index: usize) -> &mut MediaLocationInfo {
+        &mut self.list[index]
+    }
     pub fn push(&mut self, path: MediaLocationInfo) {
         self.list.push(path)
     }
 
     pub fn view_headers(&self) -> Element<Message> {
-        return if self.list.is_empty().not() {
+        if self.list.is_empty().not() {
             container(
                 Column::with_children(self.list.iter().enumerate().map(|(i, path)| {
                     path.view_header()
@@ -144,7 +191,7 @@ impl MediaPathList {
             container(column!(text("No paths...").size(25)).height(200))
         }
         .padding(20)
-        .into();
+        .into()
     }
 
     pub fn view_media(&self) -> Element<Message> {
@@ -172,18 +219,23 @@ impl MediaPathList {
     }
 
     pub fn expand_accordion(&mut self, index: usize) {
-        self.list
-            .get_mut(index)
-            .expect("Invalid Index!")
-            .dropdown_opened = true;
+        self.get_mut(index).dropdown_opened = true;
     }
 
     pub fn collapse_accordion(&mut self, index: usize) {
-        self.list
-            .get_mut(index)
-            .expect("Invalid Index!")
-            .dropdown_opened = false;
+        self.get_mut(index).dropdown_opened = false;
     }
+
+    pub async fn scan(&mut self, index: usize) {
+        self.get_mut(index).scan()
+    }
+
+    pub async fn scan_all(mut self) -> Self {
+        self.list.iter_mut().for_each(|location| location.scan());
+        self
+
+    }
+
 }
 
 #[derive(Debug, Clone, Copy, Default)]
