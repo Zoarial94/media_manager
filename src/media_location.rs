@@ -9,7 +9,9 @@ use iced::{Alignment, Border, Element, Theme};
 use serde::de::{Error, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt::Formatter;
+use std::io;
 use std::ops::Not;
+use async_std::fs::{DirEntry, ReadDir};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MediaLocationInfo {
@@ -67,11 +69,24 @@ impl Default for MediaLocationItems {
 #[derive(Clone, Debug)]
 pub struct Scanned {
     pub number: usize,
+    pub entries: Vec<DirEntry>,
 }
 
 impl Scanned {
-    pub fn new(number: usize) -> Self {
-        Scanned { number }
+    pub async fn new(dir: ReadDir ) -> Self {
+        let list: Vec<io::Result<DirEntry>> = dir.collect::<Vec<io::Result<DirEntry>>>().await;
+        let number = list.len();
+        let list: Vec<DirEntry> = list.into_iter().filter_map(|e: io::Result<DirEntry>| {
+            return match e {
+                Ok(e) => {
+                    Some(e)
+                }
+                Err(_) => {
+                    None
+                }
+            }
+        }).collect();
+        Scanned { number , entries: list}
     }
 }
 
@@ -90,13 +105,13 @@ impl MediaLocationInfo {
     pub fn new(name: String, location: String) -> Result<MediaLocationInfo, MediaPathError> {
         match std::path::Path::new(&location).canonicalize() {
             Ok(path) => {
-                match path.exists() {
+                match path.try_exists() {
                     // Returns true, false, and Err (Err means cannot be determined due to permissions)
-                    true => {
-                            if path.is_dir() {
+                    Ok(b) => {
+                            if b {
                                 Ok(MediaLocationInfo {
                                     name,
-                                    path: PathBuf::from(path),
+                                    path: PathBuf::from(path.canonicalize().unwrap()),
                                     dropdown_opened: false,
                                     items: MediaLocationItems::Unscanned,
                                 })
@@ -104,7 +119,7 @@ impl MediaLocationInfo {
                                 Err(NotADirectory)
                             }
                     }
-                    false => Err(NoPermission),
+                    Err(err) => Err(NoPermission),
                 }
             }
             Err(err) => {
@@ -180,7 +195,7 @@ impl MediaLocationInfo {
     async fn scan(&mut self) {
         match self.path.read_dir().await {
             Ok(dir) => {
-                self.items = MediaLocationItems::Scanned(Scanned::new(dir.count().await));
+                self.items = MediaLocationItems::Scanned(Scanned::new(dir).await);
             }
             Err(err) => self.items = MediaLocationItems::Error(err.to_string())
         }

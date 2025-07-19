@@ -203,8 +203,7 @@ impl MediaManager {
                 // Get a view of the currently saved paths
                 let paths_view = container(state.media_path_list.view_headers());
                 let media_view = container(state.media_path_list.view_media());
-                let path_info_valid = state.media_location.starts_with('/');
-                let button_action = if path_info_valid {
+                let button_action = if state.media_location.len() > 0 {
                     Some(Message::AddMediaPath)
                 } else {
                     None
