@@ -1,21 +1,55 @@
+use crate::media_location::MediaPathError::*;
+use crate::Message;
+use async_std::path::PathBuf;
+use async_std::task::yield_now;
+use iced::futures::StreamExt;
 use iced::widget::{button, column, container, row, scrollable, text, Column};
 use iced::Length::Fill;
 use iced::{Alignment, Border, Element, Theme};
-use serde::{Deserialize, Serialize};
+use serde::de::{Error, Visitor};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::fmt::Formatter;
 use std::ops::Not;
-use std::path::{Path, PathBuf};
-
-use crate::media_location::MediaPathError::*;
-use crate::Message;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MediaLocationInfo {
     name: String,
+    #[serde(serialize_with = "serialize_path_buf", deserialize_with = "deserialize_path_buf")]
     path: PathBuf,
     #[serde(skip)]
     dropdown_opened: bool,
     #[serde(skip)]
     items: MediaLocationItems,
+}
+
+struct PathBufVisitor;
+
+impl<'de> Visitor<'de> for PathBufVisitor {
+    type Value = PathBuf;
+
+    fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+        formatter.write_str("a string that represents a path")
+    }
+
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    where
+        E: Error
+    {
+        Ok(PathBuf::from(v))
+    }
+}
+fn serialize_path_buf<S>(path: &PathBuf, s: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer
+{
+    s.serialize_str(path.to_str().unwrap()) // TODO: Do I need to handle invalid strings?
+}
+
+fn deserialize_path_buf<'de, D>( d: D) -> Result<PathBuf, D::Error>
+where
+    D: Deserializer<'de>
+{
+    d.deserialize_str(PathBufVisitor)
 }
 
 #[derive(Clone, Debug)]
@@ -54,27 +88,23 @@ pub enum MediaPathMessage {
 impl MediaLocationInfo {
     // TODO: Somehow let this assume ownership of the parameters
     pub fn new(name: String, location: String) -> Result<MediaLocationInfo, MediaPathError> {
-        match Path::new(&location).canonicalize() {
+        match std::path::Path::new(&location).canonicalize() {
             Ok(path) => {
-                match path.try_exists() {
+                match path.exists() {
                     // Returns true, false, and Err (Err means cannot be determined due to permissions)
-                    Ok(b) => {
-                        if b {
+                    true => {
                             if path.is_dir() {
                                 Ok(MediaLocationInfo {
                                     name,
-                                    path,
+                                    path: PathBuf::from(path),
                                     dropdown_opened: false,
                                     items: MediaLocationItems::Unscanned,
                                 })
                             } else {
                                 Err(NotADirectory)
                             }
-                        } else {
-                            Err(PathDoesNotExist)
-                        }
                     }
-                    Err(_err) => Err(NoPermission),
+                    false => Err(NoPermission),
                 }
             }
             Err(err) => {
@@ -147,13 +177,14 @@ impl MediaLocationInfo {
             .into()
     }
 
-    fn scan(&mut self) {
-        match self.path.read_dir() {
+    async fn scan(&mut self) {
+        match self.path.read_dir().await {
             Ok(dir) => {
-                self.items = MediaLocationItems::Scanned(Scanned::new(dir.count()));
+                self.items = MediaLocationItems::Scanned(Scanned::new(dir.count().await));
             }
             Err(err) => self.items = MediaLocationItems::Error(err.to_string())
         }
+        yield_now().await
     }
 
 }
@@ -227,11 +258,13 @@ impl MediaPathList {
     }
 
     pub async fn scan(&mut self, index: usize) {
-        self.get_mut(index).scan()
+        self.get_mut(index).scan().await
     }
 
     pub async fn scan_all(mut self) -> Self {
-        self.list.iter_mut().for_each(|location| location.scan());
+        for info in self.list.iter_mut() {
+            info.scan().await
+        }
         self
 
     }
