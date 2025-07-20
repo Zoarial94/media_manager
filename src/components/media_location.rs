@@ -1,4 +1,4 @@
-use crate::media_location::MediaPathError::*;
+use crate::components::media_location::MediaPathError::*;
 use crate::Message;
 use async_std::path::PathBuf;
 use async_std::task::yield_now;
@@ -24,6 +24,10 @@ pub struct MediaLocationInfo {
     items: MediaLocationItems,
 }
 
+/**
+Serialization and Deserialization for Serde
+
+*/
 struct PathBufVisitor;
 
 impl<'de> Visitor<'de> for PathBufVisitor {
@@ -54,6 +58,10 @@ where
     d.deserialize_str(PathBufVisitor)
 }
 
+/**
+Media Location
+
+*/
 #[derive(Clone, Debug)]
 pub enum MediaLocationItems {
     Unscanned,
@@ -66,6 +74,10 @@ impl Default for MediaLocationItems {
     fn default() -> Self { MediaLocationItems::Unscanned }
 }
 
+/**
+Scanned Data
+
+*/
 #[derive(Clone, Debug)]
 pub struct Scanned {
     pub number: usize,
@@ -90,6 +102,10 @@ impl Scanned {
     }
 }
 
+/**
+Event Messages
+
+*/
 #[derive(Debug, Clone, Copy)]
 pub enum MediaPathMessage {
     Remove, // Remove path
@@ -100,6 +116,10 @@ pub enum MediaPathMessage {
     ScanAll,
 }
 
+/**
+MediaLocationInfo
+
+*/
 impl MediaLocationInfo {
     // TODO: Somehow let this assume ownership of the parameters
     pub fn new(name: String, location: String) -> Result<MediaLocationInfo, MediaPathError> {
@@ -158,23 +178,34 @@ impl MediaLocationInfo {
             MediaLocationItems::Scanned(scanned) => text!("Number of Children: {}", scanned.number),
             MediaLocationItems::Error(err) => text!("Error: {}", err),
         };
-        self.view_as_accordion(
-            text(self.name.to_string()).size(25).width(Fill).into(),
-            column![scanned_status,text("Option1"), text("Option2")].into(),
-        )
-    }
-
-    fn view_as_accordion<'a>(
-        &self,
-        header: Element<'a, MediaPathMessage>,
-        body: Element<'a, MediaPathMessage>,
-    ) -> Element<'a, MediaPathMessage> {
         let header = row![
-            header,
-            button("Toggle").on_press(MediaPathMessage::ToggleAccordion)
+            column![text(self.name.to_string()).size(25).width(Fill),
+            scanned_status],
+            button("Toggle").on_press(MediaPathMessage::ToggleAccordion),
         ]
-        .align_y(Alignment::Center);
+            .align_y(Alignment::Center);
         let wrapper = if self.dropdown_opened {
+            let mut body: Column<MediaPathMessage> = column![].into();
+            let mut entries : Vec<Element<MediaPathMessage>> = Vec::new();
+            match &self.items {
+                MediaLocationItems::Unscanned => {
+                    body = body.push(text!("Unscanned!"));
+                }
+                MediaLocationItems::Scanning => {
+                    body = body.push(text!("Scanning!"));
+                }
+                MediaLocationItems::Scanned(list) => {
+                    if list.number <= 0 {
+                        body = body.push(text!("Empty!"))
+                    }
+                    for (i, e) in list.entries.iter().enumerate() {
+                        body = body.push(text(format!("{i}: {}", e.file_name().into_string().unwrap())));
+                    };
+                }
+                MediaLocationItems::Error(err) => {
+                    body = body.push(text!("Error: {}", err))
+                }
+            }
             container(column![header, body].spacing(4))
         } else {
             container(header)
@@ -204,6 +235,10 @@ impl MediaLocationInfo {
 
 }
 
+/**
+MediaPathList
+
+*/
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct MediaPathList {
     list: Vec<MediaLocationInfo>,

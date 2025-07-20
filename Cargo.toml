@@ -13,3 +13,4 @@ serde = { version = "1.0.217", features = ["derive"] }
 directories-next = "2.0.0"
 async-std = "1.13.0"
 iced_aw = "0.11.0"
+exiftool = "0.2.5"

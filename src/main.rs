@@ -1,7 +1,9 @@
-mod media_location;
+mod components {
+    pub(crate) mod media_location;
+}
 mod persistence;
 
-use crate::media_location::*;
+use crate::components::media_location::*;
 use crate::persistence::*;
 use iced::widget::{button, column, container, row, text, text_input};
 use iced::{keyboard, widget, Alignment, Element, Pixels, Subscription, Task};
