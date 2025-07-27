@@ -10,6 +10,9 @@ use iced::{keyboard, widget, Alignment, Element, Pixels, Subscription, Task};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::mem;
+use std::sync::Arc;
+use async_std::sync::Mutex;
+use exiftool::ExifTool;
 
 static MEDIA_LOCATION_INPUT_ID: Lazy<text_input::Id> =
     Lazy::new(|| text_input::Id::new("Media Location"));
@@ -24,6 +27,10 @@ fn main() {
         .expect("TODO: panic message");
 }
 
+/**
+State of the program. Typically used for text boxes.
+
+*/
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub(crate) struct State {
     #[serde(skip)]
@@ -35,6 +42,11 @@ pub(crate) struct State {
     pub(crate) media_location_name: String,
     #[serde(skip)]
     pub(crate) media_path_error: MediaPathError,
+}
+
+#[derive(Debug)]
+struct Tools {
+    exif_tool_mutex: Arc<Mutex<ExifTool>>,
 }
 
 #[derive(Debug, Clone)]
@@ -58,7 +70,7 @@ enum Message {
 #[derive(Debug)]
 enum MediaManager {
     Loading(),
-    Loaded(State),
+    Loaded(State, Tools),
 }
 
 impl MediaManager {
@@ -72,7 +84,7 @@ impl MediaManager {
 
     fn update(&mut self, message: Message) -> Task<Message> {
         match self {
-            MediaManager::Loaded(state) => {
+            MediaManager::Loaded(state, tools) => {
                 let task = match message {
                     Message::MediaLocationInputChanged(new_text) => {
                         state.media_location = new_text;
@@ -136,7 +148,7 @@ impl MediaManager {
                             }
                             MediaPathMessage::ScanAll => {
                                 let list = mem::replace(&mut state.media_path_list, Box::new(Default::default()));
-                                Some(Task::perform(list.scan_all(), |list: MediaPathList| Message::MediaPathsScanned(Box::from(list))))
+                                Some(Task::perform(list.scan_all(tools.exif_tool_mutex.clone()), |list: MediaPathList| Message::MediaPathsScanned(Box::from(list))))
                             }
                         }
                     }
@@ -181,14 +193,15 @@ impl MediaManager {
                 match message {
                     Message::LoadState => Task::perform(State::load(), Message::StateLoaded),
                     Message::StateLoaded(restored_state) => {
+                        let tools: Tools = Tools { exif_tool_mutex: Arc::new(Mutex::new(ExifTool::new().unwrap()))};
                         match restored_state {
                             Ok(state) => {
                                 println!("State successfully loaded.");
-                                *self = MediaManager::Loaded(state);
+                                *self = MediaManager::Loaded(state, tools);
                             }
                             Err(e) => {
                                 eprintln!("Failed to restore state: {:?}", e);
-                                *self = MediaManager::Loaded(State::default());
+                                *self = MediaManager::Loaded(State::default(), tools);
                             }
                         }
                         Task::none()
@@ -201,7 +214,7 @@ impl MediaManager {
 
     fn view(&self) -> Element<Message> {
         match self {
-            MediaManager::Loaded(state) => {
+            MediaManager::Loaded(state, tools) => {
                 // Get a view of the currently saved paths
                 let paths_view = container(state.media_path_list.view_headers());
                 let media_view = container(state.media_path_list.view_media());
