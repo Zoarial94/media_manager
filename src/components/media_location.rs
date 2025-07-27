@@ -16,6 +16,7 @@ use std::fmt::Formatter;
 use std::io;
 use std::ops::Not;
 use std::sync::Arc;
+use turbosql::serde_json::json;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MediaLocationInfo {
@@ -102,7 +103,7 @@ impl ScannedMedia {
 
     pub fn new(entry: DirEntry, exif_tool: &mut ExifTool) -> Self {
         let path = entry.path();
-        let metadata = exif_tool.json(path.as_path().as_ref(), &["-AllDate"]);
+        let metadata = exif_tool.json(path.as_path().as_ref(), &["-AllDates"]);
         //TODO Make sure to fix this
         Self {entry, data: metadata.unwrap().to_string(), date_time_original: "Test".to_string()}
     }
@@ -113,7 +114,7 @@ impl ScannedMedia {
         let mut exif_tool = exif_tool.lock().await;
 
 
-        let mut dates_batch = exif_tool.json_batch(path_list.clone(), &["-AllDate"]).unwrap().into_iter();
+        let mut dates_batch = exif_tool.json_batch(path_list.clone(), &["-AllDates"]).unwrap().into_iter();
 
 
         for entry in entries {
@@ -126,15 +127,10 @@ impl ScannedMedia {
                     let data_string = String::new();
                     println!("File: {}", entry.file_name().to_string_lossy());
                     println!("Data: {}", data);
-                    let date_time_opt = data.get("DateTimeOriginal");
-                    match date_time_opt {
-                        Some(date_time) => {
-                            ret_list.push(ScannedMedia{entry, data: data_string, date_time_original: date_time.to_string()})
-                        }
-                        _ => {
-                            ret_list.push(ScannedMedia{entry, data: data_string, date_time_original: "No Original Date/Time".to_string()})
-                        }
-                    }
+                    let no_date_time = json!("No Date/Time");
+                    let date_time = data.get("DateTimeOriginal").unwrap_or(data.get("CreateDate").unwrap_or(&no_date_time));
+                    ret_list.push(ScannedMedia{entry, data: data_string, date_time_original: date_time.to_string()})
+
                 }
                 _ => { }
             }
